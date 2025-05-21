@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::anyhow;
-use multipipe::Pipe;
+use anyhow::{anyhow, Ok};
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use rayon::prelude::*;
@@ -52,7 +51,8 @@ pub fn traverse(
     args: &crate::cli::Args,
     manifest: &Manifest,
 ) -> anyhow::Result<impl Iterator<Item = Package>> {
-    manifest
+    use std::result::Result::Ok;
+    let ret = manifest
         .members(&args.proj)?
         .par_iter()
         .filter_map(|member| match traverse_member(member, args) {
@@ -64,8 +64,8 @@ pub fn traverse(
             }
         })
         .collect::<Vec<_>>()
-        .into_iter()
-        .pipe(Ok)
+        .into_iter();
+    Ok(ret)
 }
 
 // Traverses a workspace member.
@@ -96,7 +96,7 @@ fn traverse_member(member: &PathBuf, args: &crate::cli::Args) -> anyhow::Result<
 fn traverse_mod(ctx: &Ctx) -> anyhow::Result<Option<Mod>> {
     let Ctx { args, dir, module_name, package_name, crate_name } = ctx;
     let (mut file, module_path) = match open_file(ctx) {
-        Ok((file, module_path)) => (file, module_path),
+        std::result::Result::Ok((file, module_path)) => (file, module_path),
         Err(e) => {
             log::debug!(
                 "Cannot find module {module_name} in {module_dir}: {e}. Skipping.",
@@ -127,7 +127,7 @@ fn open_file(Ctx { dir, module_name, .. }: &Ctx) -> anyhow::Result<(std::fs::Fil
     let old_style_path = [dir, &format!("{module_name}/mod.rs").into()].iter().collect();
 
     let (file, module_path) = match std::fs::File::open(&new_style_path) {
-        Ok(file) => (file, new_style_path),
+        std::result::Result::Ok(file) => (file, new_style_path),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             std::fs::File::open(&old_style_path).map(|file| (file, old_style_path))?
         }
@@ -138,7 +138,8 @@ fn open_file(Ctx { dir, module_name, .. }: &Ctx) -> anyhow::Result<(std::fs::Fil
 }
 
 fn read_parse_tree(file: &mut std::fs::File) -> anyhow::Result<syn::File> {
-    std::io::read_to_string(file)?.pipe_ref(syn::parse_file)?.pipe(Ok)
+    let parsed_tree = syn::parse_file(std::io::read_to_string(file)?.as_str())?;
+    Ok(parsed_tree)
 }
 
 fn traverse_item_vec(
@@ -248,7 +249,7 @@ fn traverse_item_mod(ctx: &Ctx, item: syn::ItemMod) -> anyhow::Result<Option<Mod
 }
 
 fn traverse_item_use(ctx: &Ctx, item: &syn::ItemUse) -> anyhow::Result<Vec<String>> {
-    syn_util::flatten_use_tree(&item.tree)
+    let tree = syn_util::flatten_use_tree(&item.tree)
         .into_iter()
         .filter_map(|path| {
             let mut segments = path.segments.into_iter().collect::<Vec<_>>();
@@ -271,6 +272,6 @@ fn traverse_item_use(ctx: &Ctx, item: &syn::ItemUse) -> anyhow::Result<Vec<Strin
 
             None
         })
-        .collect::<Vec<_>>()
-        .pipe(Ok)
+        .collect::<Vec<_>>();
+    Ok(tree)
 }

@@ -12,9 +12,8 @@ use std::{
 
 use crate::crutches::FlattenResult;
 
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, Context, Ok};
 use glob::glob;
-use multipipe::Pipe;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -58,11 +57,12 @@ impl Manifest {
     pub fn parse(entry: impl AsRef<Path>) -> anyhow::Result<Manifest> {
         let path: PathBuf = [entry.as_ref(), &PathBuf::from("Cargo.toml")].iter().collect();
 
-        std::fs::read_to_string(&path)
-            .with_context(|| format!("Cannot open {}", path.display()))?
-            .pipe_ref(toml::from_str::<Self>)
-            .with_context(|| format!("Cannot parse {}", path.display()))?
-            .pipe(Ok)
+        let manifest = toml::from_str::<Self>(
+            std::fs::read_to_string(&path)
+                .with_context(|| format!("Cannot open {}", path.display()))?
+                .as_str(),
+        )?;
+        Ok(manifest)
     }
 
     /// Reads the [package targets] from the manifest.
@@ -176,12 +176,12 @@ impl Workspace {
         let allowed = walk_glob_members(&entry, &self.members)?.into_iter().collect::<HashSet<_>>();
         let excluded =
             walk_glob_members(&entry, &self.exclude)?.into_iter().collect::<HashSet<_>>();
-        allowed.difference(&excluded).into_iter().cloned().collect::<Vec<_>>().pipe(Ok)
+        Ok(allowed.difference(&excluded).into_iter().cloned().collect::<Vec<_>>())
     }
 }
 
 fn walk_glob_members(entry: impl AsRef<Path>, members: &[String]) -> anyhow::Result<Vec<PathBuf>> {
-    members
+    let fmted_members = members
         .iter()
         .map(|member| {
             glob(&format!("{entry}/{member}", entry = entry.as_ref().display()))
@@ -196,6 +196,6 @@ fn walk_glob_members(entry: impl AsRef<Path>, members: &[String]) -> anyhow::Res
         .collect::<anyhow::Result<Vec<_>>>()?
         .into_iter()
         .flatten()
-        .collect::<Vec<_>>()
-        .pipe(Ok)
+        .collect::<Vec<_>>();
+    Ok(fmted_members)
 }
